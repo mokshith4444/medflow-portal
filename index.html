@@ -466,7 +466,7 @@ function showAlert(title,msg,type='warn'){
     popupTitle.innerText = title;
     popupMsg.innerText = msg;
     popupIcon.innerText = type === 'warn' ? '⚠️' : '✅';
-    popupActions.innerHTML = <button class="btn-primary" onclick="closePopup()">OK</button>;
+    popupActions.innerHTML = `<button class="btn-primary" onclick="closePopup()">OK</button>`;
     popupOverlay.style.display = 'flex';
 }
 
@@ -486,18 +486,12 @@ function showStayLoginPopup(){
 function enableStayLogin(){
     stayLoggedIn = true;
     localStorage.setItem("medflowStay","yes");
-
-    if(activeUser){
-        localStorage.setItem("medflowSavedUser", JSON.stringify(activeUser));
-    }
-
     closePopup();
 }
 
 function disableStayLogin(){
     stayLoggedIn = false;
     localStorage.removeItem("medflowStay");
-    localStorage.removeItem("medflowSavedUser");
     closePopup();
 }
 
@@ -554,10 +548,6 @@ function login(){
 
         sessionStorage.setItem("medflowUser", JSON.stringify(u));
 
-        if(localStorage.getItem("medflowStay")){
-            localStorage.setItem("medflowSavedUser", JSON.stringify(u));
-        }
-
         showDashboardTab('homeTab');
         showStayLoginPopup();
     }else{
@@ -598,7 +588,7 @@ function goToStep(step){
         docs.forEach(d=>{
             let op = document.createElement("option");
             op.value = d.name;
-            op.text = Dr. ${d.name} (${d.spec});
+            op.text = `Dr. ${d.name} (${d.spec})`;
             docSelect.add(op);
         });
 
@@ -612,19 +602,19 @@ function goBack(step){
 }
 
 function locateMe(){
-    gpsBtn.innerHTML = <span class="loading-spinner"></span> Accessing GPS...;
+    gpsBtn.innerHTML = `<span class="loading-spinner"></span> Accessing GPS...`;
 
     navigator.geolocation.getCurrentPosition(pos=>{
         uLat = pos.coords.latitude;
         uLon = pos.coords.longitude;
 
-        gpsBtn.innerHTML = 📍 Detect My Location;
+        gpsBtn.innerHTML = `📍 Detect My Location`;
 
         initMap(uLat,uLon);
         fetchHospitals(uLat,uLon);
 
     },()=>{
-        gpsBtn.innerHTML = 📍 Detect My Location;
+        gpsBtn.innerHTML = `📍 Detect My Location`;
         showAlert("GPS Blocked","Could not access GPS.");
     });
 }
@@ -636,7 +626,7 @@ function setManual(){
         return showAlert("Empty Search","Type a city name first.");
     }
 
-    fetch(https://nominatim.openstreetmap.org/search?format=json&q=${c})
+    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${c}`)
     .then(r=>r.json())
     .then(d=>{
         if(d[0]){
@@ -645,8 +635,6 @@ function setManual(){
 
             initMap(uLat,uLon);
             fetchHospitals(uLat,uLon);
-        }else{
-            showAlert("Not Found","Location not found.");
         }
     });
 }
@@ -668,9 +656,8 @@ function initMap(lat,lon){
         L.marker([lat,lon]).addTo(map).bindPopup("Your Location")
     );
 }
-
 function fetchHospitals(lat,lon){
-    searchStatus.innerHTML = <span class="loading-spinner"></span> Searching 15km radius...;
+    searchStatus.innerHTML = `<span class="loading-spinner"></span> Searching 15km radius...`;
     hospSelect.innerHTML = "<option value=''>-- Loading --</option>";
 
     let q = `[out:json][timeout:20];
@@ -680,45 +667,58 @@ function fetchHospitals(lat,lon){
     );
     out center;`;
 
-    fetch("https://overpass.kumi.systems/api/interpreter",{
-        method:"POST",
-        body:"data="+encodeURIComponent(q)
-    })
-    .then(r=>r.json())
-    .then(data=>{
+    let controller = new AbortController();
+    let timeout = setTimeout(() => controller.abort(), 10000);
 
-        if(!data.elements || !data.elements.length){
-            searchStatus.innerText = "No hospitals found.";
-            hospSelect.innerHTML = "<option value=''>No results</option>";
-            return;
-        }
+    fetch("https://overpass.kumi.systems/api/interpreter", {
+        method: "POST",
+        body: "data=" + encodeURIComponent(q),
+        signal: controller.signal
+    })
+    .then(r => r.json())
+    .then(data => {
+
+        clearTimeout(timeout);
 
         hospSelect.innerHTML = "<option value=''>-- Select Hospital --</option>";
 
-        data.elements.forEach(h=>{
+        if(!data.elements || !data.elements.length){
+            searchStatus.innerText = "No hospitals found.";
+            return;
+        }
+
+        data.elements.forEach(h => {
             let name = h.tags.name || "Medical Center";
 
             let op = document.createElement("option");
             op.value = name;
             op.text = name;
-
             hospSelect.add(op);
 
-            let hLat = h.lat || h.center.lat;
-            let hLon = h.lon || h.center.lon;
+            let hLat = h.lat || h.center?.lat;
+            let hLon = h.lon || h.center?.lon;
 
-            markers.push(
-                L.marker([hLat,hLon]).addTo(map).bindPopup(name)
-            );
+            if(hLat && hLon){
+                markers.push(
+                    L.marker([hLat,hLon]).addTo(map).bindPopup(name)
+                );
+            }
         });
 
-        searchStatus.innerText = Found ${data.elements.length} facilities.;
+        searchStatus.innerText = `Found ${data.elements.length} facilities.`;
     })
-    .catch(()=>{
-        searchStatus.innerText = "Server timeout.";
+    .catch(err => {
+        clearTimeout(timeout);
+
+        hospSelect.innerHTML = "<option value=''>No data</option>";
+
+        if(err.name === "AbortError"){
+            searchStatus.innerText = "Request timeout. Try again.";
+        }else{
+            searchStatus.innerText = "Server error.";
+        }
     });
 }
-
 function finalizeBooking(){
     if(!bookDate.value || !bookTime.value){
         return showAlert("Missing","Please select date and time.");
@@ -749,7 +749,7 @@ function confirmBooking(){
         doctor:docSelect.value,
         date:bookDate.value,
         time:bookTime.value,
-        timestamp:new Date(${bookDate.value}T${bookTime.value}).getTime()
+        timestamp:new Date(`${bookDate.value}T${bookTime.value}`).getTime()
     });
 
     closePopup();
@@ -864,13 +864,15 @@ function logout(){
     regPass.value = "";
 
     sessionStorage.removeItem("medflowUser");
-    localStorage.removeItem("medflowSavedUser");
 }
 
-window.addEventListener("beforeunload", function () {
-    if (!localStorage.getItem("medflowStay")) {
+window.addEventListener("beforeunload",function(e){
+    if(!localStorage.getItem("medflowStay")){
         sessionStorage.removeItem("medflowUser");
     }
+
+    e.preventDefault();
+    e.returnValue = '';
 });
 
 document.addEventListener("keydown",function(e){
@@ -885,11 +887,9 @@ document.addEventListener("keydown",function(e){
     }
 });
 
-const savedSession = sessionStorage.getItem("medflowUser");
-const savedLocal = localStorage.getItem("medflowSavedUser");
-const saved = savedSession || savedLocal;
+const saved = sessionStorage.getItem("medflowUser");
 
-if(saved){
+if(saved && localStorage.getItem("medflowStay")){
     activeUser = JSON.parse(saved);
 
     authSection.classList.add('hidden');
